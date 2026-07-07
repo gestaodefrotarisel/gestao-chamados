@@ -36,7 +36,7 @@ try {
     const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
     if (serviceAccountKey) {
       try {
-        const credentials = JSON.parse(serviceAccountKey);
+        const credentials = JSON.parse(serviceAccountKey.trim());
         // Garante que eventuais quebras de linha escapadas como '\\n' no Render sejam convertidas para quebras reais '\n'
         if (credentials.private_key) {
           credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
@@ -584,6 +584,63 @@ async function startServer() {
     } catch (error: any) {
       console.error("Erro ao enviar e-mail via SMTP Gmail:", error);
       res.status(500).json({ error: "Falha ao enviar e-mail de notificação: " + error.message });
+    }
+  });
+
+  // Teste de SMTP de e-mails em tempo real
+  app.post("/api/test-email", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "E-mail de teste de destino não informado." });
+      }
+
+      const smtpUser = process.env.SMTP_USER || "facilitiesrisel@gmail.com";
+      const smtpPass = process.env.SMTP_PASS || "@Cap150957";
+
+      const transporter = nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      const mailOptions = {
+        from: `"Teste Risel" <${smtpUser}>`,
+        to: email,
+        subject: "[Risel Facilities] E-mail de Teste de Diagnóstico",
+        html: `
+          <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 12px; padding: 24px; background-color: #f8fafc;">
+            <h2 style="color: #0f172a; margin-top: 0;">✓ Teste de SMTP bem-sucedido!</h2>
+            <p style="color: #334155; font-size: 14px; line-height: 1.5;">O seu servidor configurado no Render conseguiu se autenticar com sucesso no servidor de SMTP do Gmail e enviar esta mensagem.</p>
+            <div style="margin-top: 20px; padding: 12px; background-color: #f1f5f9; border-radius: 8px; font-size: 12px; color: #475569;">
+              <strong>Configuração utilizada:</strong><br>
+              • Usuário SMTP: ${smtpUser}<br>
+              • Porta: 465 (SSL)
+            </div>
+          </div>
+        `
+      };
+
+      await transporter.sendMail(mailOptions);
+      return res.json({ success: true, message: "E-mail enviado com sucesso!" });
+    } catch (error: any) {
+      console.error("Erro no teste de SMTP:", error);
+      let advice = "Dica: Verifique se o e-mail e a senha estão corretos.";
+      if (error.message.includes("535") || error.message.toLowerCase().includes("accepted")) {
+        advice = "Dica: O Gmail rejeitou as credenciais. Se você tem Verificação de Duas Etapas ativa, você DEVE gerar uma 'Senha de App' (App Password) de 16 dígitos nas configurações de Segurança da sua conta Google e usá-la no campo SMTP_PASS, em vez da sua senha de login padrão.";
+      }
+      return res.status(500).json({ 
+        error: error.message, 
+        advice,
+        code: error.code || "SMTP_ERROR"
+      });
     }
   });
 
