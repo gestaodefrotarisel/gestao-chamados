@@ -68,7 +68,7 @@ let adminUsersMemoryFallback: any[] = [];
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   // Permite payloads maiores para suportar anexos de imagem se necessário
   app.use(express.json({ limit: "50mb" }));
@@ -286,19 +286,49 @@ async function startServer() {
       const { users } = req.body;
       if (!Array.isArray(users)) return res.status(400).json({ error: "Dados inválidos" });
 
+      // Atualiza o fallback em memória preservando senhas e tokens
+      users.forEach((u: any) => {
+        const existing = adminUsersMemoryFallback.find(ex => ex.id === u.id);
+        if (existing) {
+          if (existing.password) u.password = existing.password;
+          if (existing.inviteToken) u.inviteToken = existing.inviteToken;
+          if (existing.inviteExpires) u.inviteExpires = existing.inviteExpires;
+          if (existing.isGeneralAdmin) u.isGeneralAdmin = existing.isGeneralAdmin;
+        }
+      });
       adminUsersMemoryFallback = [...users];
 
       if (db) {
         const colRef = db.collection("admin_users");
         const snapshot = await colRef.get();
+        const existingDocs = snapshot.docs;
+
+        // Deleta os documentos que não estão no array recebido (foram excluídos no front)
+        const sentIds = users.map((u: any) => u.id);
         const batch = db.batch();
         
-        snapshot.docs.forEach((doc: any) => batch.delete(doc.ref));
-        users.forEach((user: any) => {
-          const ref = colRef.doc(user.id || user.username);
-          batch.set(ref, user);
+        existingDocs.forEach((doc: any) => {
+          if (!sentIds.includes(doc.id)) {
+            batch.delete(doc.ref);
+          }
         });
         await batch.commit();
+
+        // Salva os novos ou atualizados preservando campos confidenciais
+        for (const user of users) {
+          const docRef = colRef.doc(user.id);
+          const docSnap = await docRef.get();
+          let mergedUser = { ...user };
+          
+          if (docSnap.exists) {
+            const currentData = docSnap.data() || {};
+            if (currentData.password) mergedUser.password = currentData.password;
+            if (currentData.inviteToken) mergedUser.inviteToken = currentData.inviteToken;
+            if (currentData.inviteExpires) mergedUser.inviteExpires = currentData.inviteExpires;
+            if (currentData.isGeneralAdmin) mergedUser.isGeneralAdmin = currentData.isGeneralAdmin;
+          }
+          await docRef.set(mergedUser, { merge: true });
+        }
       }
       return res.json({ success: true, data: adminUsersMemoryFallback });
     } catch (err: any) {
@@ -539,9 +569,36 @@ async function startServer() {
         </div>
       `;
 
+      // Coleta dinâmica de todos os e-mails de administradores ativos
+      let activeAdminEmails: string[] = [];
+      if (db) {
+        try {
+          const adminsSnapshot = await db.collection("admin_users").where("active", "==", true).get();
+          adminsSnapshot.docs.forEach((doc: any) => {
+            const adminData = doc.data();
+            if (adminData.email) {
+              activeAdminEmails.push(adminData.email.trim());
+            }
+          });
+        } catch (e) {
+          console.error("Erro ao buscar administradores ativos do Firestore para envio de e-mail:", e);
+        }
+      }
+      if (activeAdminEmails.length === 0) {
+        activeAdminEmails = adminUsersMemoryFallback
+          .filter(u => u.active && u.email)
+          .map(u => u.email.trim());
+      }
+
       const ccList = [smtpUser];
-      // Envia aviso ao gestor de facilities quando um chamado é aberto
-      if (!isUpdate) {
+      activeAdminEmails.forEach(email => {
+        if (!ccList.includes(email)) {
+          ccList.push(email);
+        }
+      });
+
+      // Garante que o gestor geral deny.goncalves@risel.com.br esteja sempre em cópia
+      if (!ccList.includes("deny.goncalves@risel.com.br")) {
         ccList.push("deny.goncalves@risel.com.br");
       }
 
@@ -641,6 +698,296 @@ async function startServer() {
         advice,
         code: error.code || "SMTP_ERROR"
       });
+    }
+  });
+
+  // --- ENDPOINTS DE AUTENTICAÇÃO E CONTROLE DE ACESSO ADMINISTRATIVO ---
+
+  // 1. Login Administrativo Real
+  app.post("/api/admin/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // Caso especial: deny.goncalves@risel.com.br com a senha @Cap150957
+      if (normalizedEmail === "deny.goncalves@risel.com.br" && password === "@Cap150957") {
+        // Garante que o usuário existe no Firestore/memória como Admin Geral
+        let denyUser: any = {
+          id: "admin_deny",
+          name: "Deny Gonçalves",
+          email: "deny.goncalves@risel.com.br",
+          phone: "(11) 99999-9999",
+          sector: "Facilities",
+          active: true,
+          isGeneralAdmin: true,
+          password: "@Cap150957"
+        };
+
+        if (db) {
+          await db.collection("admin_users").doc(denyUser.id).set(denyUser, { merge: true });
+        }
+        if (!adminUsersMemoryFallback.some(u => u.email === denyUser.email)) {
+          adminUsersMemoryFallback.push(denyUser);
+        } else {
+          adminUsersMemoryFallback = adminUsersMemoryFallback.map(u => u.email === denyUser.email ? { ...u, active: true, password: "@Cap150957", isGeneralAdmin: true } : u);
+        }
+
+        return res.json({ success: true, user: { name: denyUser.name, email: denyUser.email, sector: denyUser.sector, isGeneralAdmin: true } });
+      }
+
+      let user: any = null;
+      if (db) {
+        const querySnapshot = await db.collection("admin_users").where("email", "==", normalizedEmail).get();
+        if (!querySnapshot.empty) {
+          user = querySnapshot.docs[0].data();
+        }
+      } else {
+        user = adminUsersMemoryFallback.find(u => u.email.trim().toLowerCase() === normalizedEmail);
+      }
+
+      if (!user) {
+        return res.status(401).json({ error: "Usuário ou senha incorretos." });
+      }
+
+      if (!user.active) {
+        return res.status(403).json({ error: "Sua conta está inativa ou pendente de ativação por e-mail." });
+      }
+
+      if (user.password !== password) {
+        return res.status(401).json({ error: "Usuário ou senha incorretos." });
+      }
+
+      return res.json({
+        success: true,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          sector: user.sector,
+          isGeneralAdmin: !!user.isGeneralAdmin
+        }
+      });
+    } catch (err: any) {
+      console.error("Erro no login administrativo:", err);
+      return res.status(500).json({ error: "Erro interno no servidor ao realizar login." });
+    }
+  });
+
+  // 2. Enviar convite de novo admin (Gera link e envia por e-mail)
+  app.post("/api/admin/invite", async (req, res) => {
+    try {
+      const { name, email, phone, sector } = req.body;
+      if (!name || !email) {
+        return res.status(400).json({ error: "Nome e e-mail são obrigatórios para o convite." });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // Validação do domínio @risel.com.br
+      if (!normalizedEmail.endsWith("@risel.com.br")) {
+        return res.status(400).json({ error: "O e-mail do administrador deve conter obrigatoriamente o domínio @risel.com.br" });
+      }
+
+      // Verifica se o e-mail já existe
+      let alreadyExists = false;
+      if (db) {
+        const querySnapshot = await db.collection("admin_users").where("email", "==", normalizedEmail).get();
+        alreadyExists = !querySnapshot.empty;
+      } else {
+        alreadyExists = adminUsersMemoryFallback.some(u => u.email.trim().toLowerCase() === normalizedEmail);
+      }
+
+      if (alreadyExists) {
+        return res.status(400).json({ error: "Este e-mail já está cadastrado no sistema." });
+      }
+
+      // Gera token de convite
+      const inviteToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      const inviteExpires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // 48h
+
+      const newAdmin = {
+        id: "admin_" + Date.now(),
+        name: name.trim(),
+        email: normalizedEmail,
+        phone: phone ? phone.trim() : "",
+        sector: sector ? sector.trim() : "Facilities",
+        active: false,
+        status: "pending_password",
+        inviteToken,
+        inviteExpires
+      };
+
+      if (db) {
+        await db.collection("admin_users").doc(newAdmin.id).set(newAdmin);
+      }
+      adminUsersMemoryFallback.push(newAdmin);
+
+      // Envia o e-mail de convite
+      const smtpUser = process.env.SMTP_USER || "facilitiesrisel@gmail.com";
+      const smtpPass = process.env.SMTP_PASS || "@Cap150957";
+
+      const transporter = nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      const origin = req.headers.origin || "http://localhost:3000";
+      const activationLink = `${origin}/?inviteToken=${inviteToken}`;
+
+      const mailOptions = {
+        from: `"Risel Facilities" <${smtpUser}>`,
+        to: normalizedEmail,
+        subject: "[Risel Facilities] Convite para Acesso Administrativo",
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="background-color: #002b5c; padding: 24px; text-align: center; color: #ffffff;">
+              <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.5px;">CONVITE ADMINISTRATIVO</h1>
+              <p style="margin: 6px 0 0 0; font-size: 11px; color: #247d52; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Risel Facilities</p>
+            </div>
+            
+            <div style="padding: 28px; color: #334155; line-height: 1.6;">
+              <p style="font-size: 15px; margin-top: 0; color: #1e293b;">Olá, <strong>${name}</strong>,</p>
+              <p style="font-size: 14px; color: #475569;">Você foi convidado para atuar como administrador/técnico no sistema <strong>Risel Facilities</strong>. Para ativar seu cadastro e definir uma senha de acesso segura, clique no botão abaixo:</p>
+              
+              <div style="text-align: center; margin: 32px 0;">
+                <a href="${activationLink}" style="background-color: #002b5c; color: #ffffff; padding: 14px 28px; border-radius: 10px; font-weight: bold; text-decoration: none; display: inline-block; font-size: 14px; box-shadow: 0 4px 6px rgba(0, 43, 92, 0.15);">
+                  Definir Senha e Ativar Conta
+                </a>
+              </div>
+
+              <p style="font-size: 12.5px; color: #64748b; margin-top: 16px;">
+                <em>Atenção: Este convite expira em 48 horas.</em> Se o botão acima não funcionar, copie e cole o link a seguir no seu navegador:
+              </p>
+              <p style="font-size: 12px; color: #2563eb; word-break: break-all; background-color: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #f1f5f9;">
+                ${activationLink}
+              </p>
+
+              <div style="text-align: center; border-top: 1px solid #f1f5f9; padding-top: 20px; margin-top: 32px;">
+                <span style="font-size: 11px; color: #94a3b8; display: block;">E-mail automático enviado pelo Portal de Facilities da Risel Combustíveis.</span>
+              </div>
+            </div>
+          </div>
+        `
+      };
+
+      await transporter.sendMail(mailOptions);
+      return res.json({ success: true, message: "Convite enviado com sucesso!", user: newAdmin });
+    } catch (err: any) {
+      console.error("Erro ao enviar convite administrativo:", err);
+      return res.status(500).json({ error: "Erro interno no servidor ao processar convite: " + err.message });
+    }
+  });
+
+  // 3. Cadastrar senha a partir do Token de Convite
+  app.post("/api/admin/setup-password", async (req, res) => {
+    try {
+      const { inviteToken, password } = req.body;
+      if (!inviteToken || !password) {
+        return res.status(400).json({ error: "Token e senha são obrigatórios." });
+      }
+
+      let user: any = null;
+      let userDocId: string | null = null;
+
+      if (db) {
+        const querySnapshot = await db.collection("admin_users").where("inviteToken", "==", inviteToken).get();
+        if (!querySnapshot.empty) {
+          user = querySnapshot.docs[0].data();
+          userDocId = querySnapshot.docs[0].id;
+        }
+      } else {
+        user = adminUsersMemoryFallback.find(u => u.inviteToken === inviteToken);
+      }
+
+      if (!user) {
+        return res.status(400).json({ error: "Link de ativação inválido ou já utilizado." });
+      }
+
+      if (user.inviteExpires && new Date() > new Date(user.inviteExpires)) {
+        return res.status(400).json({ error: "Este convite expirou. Entre em contato com um administrador geral para reenvio." });
+      }
+
+      // Atualiza usuário
+      const updatedUser = {
+        ...user,
+        password: password,
+        active: true,
+        inviteToken: null,
+        inviteExpires: null,
+        status: "active"
+      };
+
+      if (db && userDocId) {
+        await db.collection("admin_users").doc(userDocId).set(updatedUser);
+      }
+
+      adminUsersMemoryFallback = adminUsersMemoryFallback.map(u => u.id === user.id ? updatedUser : u);
+
+      return res.json({ success: true, message: "Senha definida e conta ativada com sucesso! Você já pode realizar o login." });
+    } catch (err: any) {
+      console.error("Erro ao definir senha de administrador:", err);
+      return res.status(500).json({ error: "Erro interno no servidor ao definir senha." });
+    }
+  });
+
+  // 4. Trocar a própria senha
+  app.post("/api/admin/change-password", async (req, res) => {
+    try {
+      const { email, oldPassword, newPassword } = req.body;
+      if (!email || !oldPassword || !newPassword) {
+        return res.status(400).json({ error: "Todos os campos são obrigatórios." });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      let user: any = null;
+      let userDocId: string | null = null;
+
+      if (db) {
+        const querySnapshot = await db.collection("admin_users").where("email", "==", normalizedEmail).get();
+        if (!querySnapshot.empty) {
+          user = querySnapshot.docs[0].data();
+          userDocId = querySnapshot.docs[0].id;
+        }
+      } else {
+        user = adminUsersMemoryFallback.find(u => u.email.trim().toLowerCase() === normalizedEmail);
+      }
+
+      if (!user) {
+        return res.status(404).json({ error: "Usuário não encontrado." });
+      }
+
+      if (user.password !== oldPassword) {
+        return res.status(401).json({ error: "A senha atual informada está incorreta." });
+      }
+
+      const updatedUser = {
+        ...user,
+        password: newPassword
+      };
+
+      if (db && userDocId) {
+        await db.collection("admin_users").doc(userDocId).set(updatedUser);
+      }
+
+      adminUsersMemoryFallback = adminUsersMemoryFallback.map(u => u.id === user.id ? updatedUser : u);
+
+      return res.json({ success: true, message: "Senha alterada com sucesso!" });
+    } catch (err: any) {
+      console.error("Erro ao alterar senha:", err);
+      return res.status(500).json({ error: "Erro interno no servidor ao alterar senha." });
     }
   });
 
