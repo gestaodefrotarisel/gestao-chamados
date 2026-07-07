@@ -14,6 +14,8 @@ import AdminDashboard from './components/AdminDashboard';
 import AdminHistory from './components/AdminHistory';
 import AdminLogin from './components/AdminLogin';
 import AdminRegisters from './components/AdminRegisters';
+import SetupPassword from './components/SetupPassword';
+import ChangePasswordModal from './components/ChangePasswordModal';
 
 export default function App() {
   // --- STATE FOR TICKETS ---
@@ -69,6 +71,37 @@ export default function App() {
     return stored === 'true';
   });
   const [showLoginScreen, setShowLoginScreen] = useState(false);
+
+  // Dados do administrador autenticado
+  const [loggedAdminName, setLoggedAdminName] = useState(() => {
+    return sessionStorage.getItem('risel_admin_name') || 'Gestor de Frota';
+  });
+  const [loggedAdminEmail, setLoggedAdminEmail] = useState(() => {
+    return sessionStorage.getItem('risel_admin_email') || 'facilities@risel.com.br';
+  });
+
+  // Modal de alteração de senha
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+
+  // Token de convite por e-mail na URL
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('inviteToken');
+    if (token) {
+      setInviteToken(token);
+    }
+  }, []);
+
+  const handleSetupPasswordSuccess = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('inviteToken');
+    window.history.replaceState({}, '', url.toString());
+    setInviteToken(null);
+    setProfile('admin');
+    setShowLoginScreen(true);
+  };
 
   // Sub-navigation for user: 'create' or 'track'
   const [userTab, setUserTab] = useState<'create' | 'track'>('create');
@@ -398,18 +431,39 @@ export default function App() {
     }
   };
 
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = (name: string, email: string) => {
     setIsAdminAuthenticated(true);
+    setLoggedAdminName(name);
+    setLoggedAdminEmail(email);
     sessionStorage.setItem('risel_admin_auth', 'true');
+    sessionStorage.setItem('risel_admin_name', name);
+    sessionStorage.setItem('risel_admin_email', email);
     setProfile('admin');
     setShowLoginScreen(false);
   };
 
   const handleAdminLogout = () => {
     setIsAdminAuthenticated(false);
+    setLoggedAdminName('Gestor de Frota');
+    setLoggedAdminEmail('facilities@risel.com.br');
     sessionStorage.removeItem('risel_admin_auth');
+    sessionStorage.removeItem('risel_admin_name');
+    sessionStorage.removeItem('risel_admin_email');
     setProfile('user');
   };
+
+  if (inviteToken) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Imagem de Fundo Discreta do Sistema (Caminhão) */}
+        <div 
+          className="absolute inset-0 opacity-[0.035] bg-cover bg-center pointer-events-none z-0" 
+          style={{ backgroundImage: `url('https://i.ibb.co/Z64d6VF9/c-AMINH-O.jpg')` }}
+        />
+        <SetupPassword token={inviteToken} onSuccess={handleSetupPasswordSuccess} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50/50 text-slate-800 font-sans flex flex-col antialiased relative overflow-hidden">
@@ -479,13 +533,19 @@ export default function App() {
                   referrerPolicy="no-referrer"
                 />
                 {!isSidebarCollapsed && (
-                  <div className="overflow-hidden" id="admin-sidebar-profile-info">
+                  <div className="overflow-hidden flex-1" id="admin-sidebar-profile-info">
                     <span className="text-xs font-bold block text-white truncate">
-                      {adminUsers[0]?.name || 'Gestor de Frota'}
+                      {loggedAdminName}
                     </span>
                     <span className="text-[10px] text-slate-300 block truncate">
-                      {adminUsers[0]?.email || 'facilities@risel.com.br'}
+                      {loggedAdminEmail}
                     </span>
+                    <button
+                      onClick={() => setIsChangePasswordOpen(true)}
+                      className="text-[9px] text-risel-yellow hover:underline block font-semibold text-left mt-0.5 cursor-pointer"
+                    >
+                      Alterar Senha
+                    </button>
                   </div>
                 )}
               </div>
@@ -774,6 +834,11 @@ export default function App() {
         </div>
       )}
 
+      <ChangePasswordModal 
+        email={loggedAdminEmail} 
+        isOpen={isChangePasswordOpen} 
+        onClose={() => setIsChangePasswordOpen(false)} 
+      />
     </div>
   );
 }

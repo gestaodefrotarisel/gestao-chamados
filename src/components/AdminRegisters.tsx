@@ -4,7 +4,7 @@ import {
   Building2, Layers, Clock, Plus, Trash2, Edit2, Check, X, ToggleLeft, ToggleRight, 
   Wind, Zap, Droplet, Hammer, ArrowUpDown, ShieldAlert, Trash, AlertTriangle, Play, Users,
   Key, Wifi, Paintbrush, Wrench, Flame, Plug, HardHat, Laptop, Phone, Sun, Car, Leaf, Search,
-  Database, RefreshCw, Server
+  Database, RefreshCw, Server, Mail, Send
 } from 'lucide-react';
 import { MaintenanceItem, OperationalBase, UrgencyConfig, PriorityType, AdminUser } from '../types';
 
@@ -72,12 +72,54 @@ export default function AdminRegisters({
   const [isResetting, setIsResetting] = useState(false);
   const [dbInfo, setDbInfo] = useState<{ configured: boolean; provider: string }>({ configured: false, provider: 'Verificando...' });
 
+  const [testEmail, setTestEmail] = useState('');
+  const [isTestingEmail, setIsTestingEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; message: string; advice?: string } | null>(null);
+
   React.useEffect(() => {
     fetch('/api/db-status')
       .then(res => res.json())
       .then(data => setDbInfo(data))
       .catch(() => setDbInfo({ configured: false, provider: 'Erro ao conectar' }));
   }, [activeTab]);
+
+  const handleTestEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testEmail) return;
+
+    setIsTestingEmail(true);
+    setTestEmailResult(null);
+
+    fetch('/api/test-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: testEmail })
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (res.ok) {
+          setTestEmailResult({
+            success: true,
+            message: data.message || 'E-mail enviado com sucesso!'
+          });
+        } else {
+          setTestEmailResult({
+            success: false,
+            message: data.error || 'Erro desconhecido ao enviar e-mail.',
+            advice: data.advice
+          });
+        }
+      })
+      .catch((err) => {
+        setTestEmailResult({
+          success: false,
+          message: 'Não foi possível se comunicar com o servidor: ' + err.message
+        });
+      })
+      .finally(() => {
+        setIsTestingEmail(false);
+      });
+  };
 
   // State for operational base forms
   const [newBaseName, setNewBaseName] = useState('');
@@ -133,6 +175,8 @@ export default function AdminRegisters({
   const [iconSearchTerm, setIconSearchTerm] = useState('');
 
   const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [isSendingInvite, setIsSendingInvite] = useState(false);
 
   // Operational Base Actions
   const handleAddBase = (e: React.FormEvent) => {
@@ -199,33 +243,86 @@ export default function AdminRegisters({
   const handleAddAdmin = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    if (!newAdminName.trim() || !newAdminEmail.trim()) {
+    setSuccessMsg('');
+    
+    const emailLower = newAdminEmail.trim().toLowerCase();
+    
+    if (!newAdminName.trim() || !emailLower) {
       setErrorMsg('Nome e E-mail são obrigatórios para cadastrar um administrador.');
       return;
     }
-    if (adminUsers.some(u => u.email.toLowerCase() === newAdminEmail.trim().toLowerCase())) {
+    
+    // Validação obrigatória do domínio @risel.com.br
+    if (!emailLower.endsWith('@risel.com.br')) {
+      setErrorMsg('O e-mail do administrador deve pertencer obrigatoriamente ao domínio @risel.com.br');
+      return;
+    }
+    
+    if (adminUsers.some(u => u.email.toLowerCase() === emailLower)) {
       setErrorMsg('Já existe um administrador cadastrado com este e-mail.');
       return;
     }
 
-    const newUser: AdminUser = {
-      id: 'admin_' + Date.now(),
-      name: newAdminName.trim(),
-      email: newAdminEmail.trim(),
-      phone: newAdminPhone.trim() || '(11) 99999-9999',
-      sector: newAdminSector.trim() || 'Facilities',
-      active: true
-    };
-
-    setAdminUsers(prev => [...prev, newUser]);
-    setNewAdminName('');
-    setNewAdminEmail('');
-    setNewAdminPhone('');
-    setNewAdminSector('');
+    setIsSendingInvite(true);
+    
+    fetch('/api/admin/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newAdminName.trim(),
+        email: emailLower,
+        phone: newAdminPhone.trim(),
+        sector: newAdminSector.trim()
+      })
+    })
+    .then(async (res) => {
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMsg(`Convite enviado com sucesso para ${emailLower}! Um e-mail foi disparado para que a pessoa cadastre a própria senha.`);
+        // Adiciona à lista local o administrador criado na API
+        if (data.user) {
+          setAdminUsers(prev => [...prev, data.user]);
+        }
+        setNewAdminName('');
+        setNewAdminEmail('');
+        setNewAdminPhone('');
+        setNewAdminSector('');
+      } else {
+        setErrorMsg(data.error || 'Erro ao enviar convite por e-mail.');
+      }
+    })
+    .catch((err) => {
+      setErrorMsg('Erro de comunicação com o servidor: ' + err.message);
+    })
+    .finally(() => {
+      setIsSendingInvite(false);
+    });
   };
 
   const handleToggleAdmin = (id: string) => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    const admin = adminUsers.find(u => u.id === id);
+    if (admin && admin.email === 'deny.goncalves@risel.com.br') {
+      setErrorMsg('Não é permitido desativar o Administrador Geral do sistema.');
+      return;
+    }
     setAdminUsers(prev => prev.map(u => u.id === id ? { ...u, active: !u.active } : u));
+    setSuccessMsg(`Status do administrador ${admin?.name} alterado com sucesso.`);
+  };
+
+  const handleRemoveAdmin = (id: string) => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    const admin = adminUsers.find(u => u.id === id);
+    if (admin && admin.email === 'deny.goncalves@risel.com.br') {
+      setErrorMsg('Não é permitido excluir o Administrador Geral do sistema.');
+      return;
+    }
+    if (window.confirm(`Tem certeza de que deseja excluir permanentemente o administrador "${admin?.name}"?`)) {
+      setAdminUsers(prev => prev.filter(u => u.id !== id));
+      setSuccessMsg('Administrador excluído com sucesso.');
+    }
   };
 
   const handleStartEditAdmin = (admin: AdminUser) => {
@@ -237,18 +334,29 @@ export default function AdminRegisters({
   };
 
   const handleSaveAdmin = (id: string) => {
-    if (!editingAdminName.trim() || !editingAdminEmail.trim()) {
+    setErrorMsg('');
+    setSuccessMsg('');
+    const emailLower = editingAdminEmail.trim().toLowerCase();
+    if (!editingAdminName.trim() || !emailLower) {
       setErrorMsg('Nome e E-mail são obrigatórios para o administrador.');
       return;
     }
+    
+    // Validação obrigatória do domínio @risel.com.br
+    if (!emailLower.endsWith('@risel.com.br')) {
+      setErrorMsg('O e-mail do administrador deve pertencer obrigatoriamente ao domínio @risel.com.br');
+      return;
+    }
+    
     setAdminUsers(prev => prev.map(u => u.id === id ? {
       ...u,
       name: editingAdminName.trim(),
-      email: editingAdminEmail.trim(),
+      email: emailLower,
       phone: editingAdminPhone.trim(),
       sector: editingAdminSector.trim()
     } : u));
     setEditingAdminId(null);
+    setSuccessMsg('Cadastro atualizado com sucesso.');
   };
 
   // Maintenance Items & Subitems Actions
@@ -421,6 +529,12 @@ export default function AdminRegisters({
     }
   };
 
+  const changeTab = (tab: TabType) => {
+    setActiveTab(tab);
+    setErrorMsg('');
+    setSuccessMsg('');
+  };
+
   return (
     <div className="bg-white rounded-2xl shadow-md border border-slate-100 overflow-hidden" id="admin-registers-container">
       {/* Header */}
@@ -433,7 +547,7 @@ export default function AdminRegisters({
         {/* Abas */}
         <div className="flex bg-slate-200/60 p-1 rounded-xl border border-slate-200 shrink-0">
           <button
-            onClick={() => setActiveTab('items')}
+            onClick={() => changeTab('items')}
             className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
               activeTab === 'items' 
                 ? 'bg-white text-risel-blue shadow-sm' 
@@ -444,7 +558,7 @@ export default function AdminRegisters({
             <span>Itens & Subitens</span>
           </button>
           <button
-            onClick={() => setActiveTab('bases')}
+            onClick={() => changeTab('bases')}
             className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
               activeTab === 'bases' 
                 ? 'bg-white text-risel-blue shadow-sm' 
@@ -455,7 +569,7 @@ export default function AdminRegisters({
             <span>Bases Operacionais</span>
           </button>
           <button
-            onClick={() => setActiveTab('urgency')}
+            onClick={() => changeTab('urgency')}
             className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
               activeTab === 'urgency' 
                 ? 'bg-white text-risel-blue shadow-sm' 
@@ -466,7 +580,7 @@ export default function AdminRegisters({
             <span>SLA & Urgência</span>
           </button>
           <button
-            onClick={() => setActiveTab('admins')}
+            onClick={() => changeTab('admins')}
             className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
               activeTab === 'admins' 
                 ? 'bg-white text-risel-blue shadow-sm' 
@@ -477,7 +591,7 @@ export default function AdminRegisters({
             <span>Admins</span>
           </button>
           <button
-            onClick={() => setActiveTab('sistema')}
+            onClick={() => changeTab('sistema')}
             className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
               activeTab === 'sistema' 
                 ? 'bg-white text-risel-blue shadow-sm' 
@@ -494,6 +608,13 @@ export default function AdminRegisters({
         <div className="mx-6 mt-6 bg-rose-50 border border-rose-100 text-rose-800 rounded-xl p-4 flex items-center gap-3 text-xs">
           <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
           <span>{errorMsg}</span>
+        </div>
+      )}
+
+      {successMsg && (
+        <div className="mx-6 mt-6 bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-xl p-4 flex items-center gap-3 text-xs font-semibold">
+          <Check className="w-5 h-5 text-emerald-500 shrink-0" />
+          <span>{successMsg}</span>
         </div>
       )}
 
@@ -1262,8 +1383,19 @@ export default function AdminRegisters({
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-risel-blue bg-white text-slate-800" 
                     />
                   </div>
-                  <button type="submit" className="w-full bg-risel-blue hover:bg-opacity-95 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer">
-                    Cadastrar Admin
+                  <button 
+                    type="submit" 
+                    disabled={isSendingInvite}
+                    className="w-full bg-risel-blue hover:bg-opacity-95 text-white font-bold py-2.5 rounded-lg text-xs transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSendingInvite ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Enviando Convite...</span>
+                      </>
+                    ) : (
+                      <span>Cadastrar & Enviar Convite</span>
+                    )}
                   </button>
                 </form>
               </div>
@@ -1358,7 +1490,7 @@ export default function AdminRegisters({
                                     {u.active ? 'Ativo' : 'Inativo'}
                                   </span>
                                 </td>
-                                <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
+                                <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
                                   <button
                                     onClick={() => handleStartEditAdmin(u)}
                                     type="button"
@@ -1370,14 +1502,28 @@ export default function AdminRegisters({
                                   <button
                                     onClick={() => handleToggleAdmin(u.id)}
                                     type="button"
-                                    className="p-1 hover:bg-slate-100 rounded transition cursor-pointer inline-flex items-center"
-                                    title={u.active ? 'Inativar Administrador' : 'Ativar Administrador'}
+                                    disabled={u.email === 'deny.goncalves@risel.com.br'}
+                                    className={`p-1 rounded transition cursor-pointer inline-flex items-center ${
+                                      u.email === 'deny.goncalves@risel.com.br' ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-100'
+                                    }`}
+                                    title={u.email === 'deny.goncalves@risel.com.br' ? 'Não permitido inativar Admin Geral' : (u.active ? 'Inativar Administrador' : 'Ativar Administrador')}
                                   >
                                     {u.active ? (
                                       <ToggleRight className="w-6 h-6 text-emerald-600" />
                                     ) : (
                                       <ToggleLeft className="w-6 h-6 text-slate-400" />
                                     )}
+                                  </button>
+                                  <button
+                                    onClick={() => handleRemoveAdmin(u.id)}
+                                    type="button"
+                                    disabled={u.email === 'deny.goncalves@risel.com.br'}
+                                    className={`p-1 rounded transition cursor-pointer inline-flex items-center ${
+                                      u.email === 'deny.goncalves@risel.com.br' ? 'opacity-40 cursor-not-allowed text-slate-300' : 'hover:bg-slate-100 text-rose-500 hover:text-rose-600'
+                                    }`}
+                                    title={u.email === 'deny.goncalves@risel.com.br' ? 'Não permitido excluir Admin Geral' : 'Excluir Administrador'}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
                                 </td>
                               </>
@@ -1421,6 +1567,70 @@ export default function AdminRegisters({
                     {dbInfo.configured ? 'Firebase Conectado' : 'Modo Offline / LocalStorage'}
                   </span>
                 </div>
+              </div>
+
+              {/* Diagnóstico de Envio de E-mails (SMTP) */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-50 text-risel-blue p-2 rounded-lg shrink-0">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Diagnóstico de E-mail (SMTP)</h4>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Teste a conexão com o servidor de e-mails para garantir que as notificações de abertura e atualização de chamados estão sendo despachadas.
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleTestEmail} className="space-y-3 pt-1">
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      required
+                      placeholder="Digite um e-mail para receber o teste..."
+                      value={testEmail}
+                      onChange={(e) => setTestEmail(e.target.value)}
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-risel-blue focus:ring-1 focus:ring-risel-blue transition"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isTestingEmail || !testEmail}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {isTestingEmail ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Testando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Enviar Teste</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {testEmailResult && (
+                    <div className={`text-xs rounded-lg p-3.5 border ${
+                      testEmailResult.success 
+                        ? 'bg-emerald-50 border-emerald-100 text-emerald-800 font-medium' 
+                        : 'bg-rose-50 border-rose-100 text-rose-800'
+                    }`}>
+                      <div className="font-bold flex items-center gap-1.5 mb-1">
+                        <span className={`w-2 h-2 rounded-full ${testEmailResult.success ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                        {testEmailResult.success ? '✓ Conexão SMTP OK!' : '✗ Erro na autenticação SMTP'}
+                      </div>
+                      <p className="leading-relaxed font-mono text-[11px] whitespace-pre-line">{testEmailResult.message}</p>
+                      {testEmailResult.advice && (
+                        <p className="mt-2 text-[11px] leading-relaxed bg-white/60 border border-rose-200/50 rounded-md p-2 font-semibold text-rose-900">
+                          💡 {testEmailResult.advice}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </form>
               </div>
 
               {/* Reset de Chamados */}

@@ -98,7 +98,22 @@ export default function AdminDashboard({ tickets, onEditTicket }: AdminDashboard
     return acc + (new Date(t.updatedAt).getTime() - new Date(t.createdAt).getTime()) / (1000 * 60);
   }, 0);
   const mttrReal = ticketsComTempo.length > 0 ? Math.round(totalTempoMinutos / ticketsComTempo.length) : null;
-  const mttrText = mttrReal !== null ? `${mttrReal} min` : '--';
+  
+  let mttrText = '--';
+  if (mttrReal !== null) {
+    if (mttrReal < 60) {
+      mttrText = `${mttrReal} min`;
+    } else if (mttrReal < 1440) {
+      const hours = Math.floor(mttrReal / 60);
+      const minutes = mttrReal % 60;
+      mttrText = `${hours}h ${minutes}m`;
+    } else {
+      const days = Math.floor(mttrReal / 1440);
+      const remainingMinutes = mttrReal % 1440;
+      const hours = Math.floor(remainingMinutes / 60);
+      mttrText = `${days}d ${hours}h`;
+    }
+  }
 
   // --- 2. Calcular CSAT Real (Satisfação de Atendimento) ---
   const ticketsComAvaliacao = filteredTickets.filter(t => t.satisfactionRating !== undefined && t.satisfactionRating !== null);

@@ -47,7 +47,12 @@ try {
       }
     }
 
-    const app = admin.initializeApp(configOptions);
+    let app;
+    if ((admin as any).apps.length === 0) {
+      app = admin.initializeApp(configOptions);
+    } else {
+      app = (admin as any).app();
+    }
     
     db = getFirestore(app, databaseId || undefined);
     isFirebaseConfigured = true;
@@ -728,7 +733,11 @@ async function startServer() {
         };
 
         if (db) {
-          await db.collection("admin_users").doc(denyUser.id).set(denyUser, { merge: true });
+          try {
+            await db.collection("admin_users").doc(denyUser.id).set(denyUser, { merge: true });
+          } catch (dbErr: any) {
+            console.error("Erro resiliente: falha ao salvar administrador geral no Firestore:", dbErr.message);
+          }
         }
         if (!adminUsersMemoryFallback.some(u => u.email === denyUser.email)) {
           adminUsersMemoryFallback.push(denyUser);
@@ -741,9 +750,14 @@ async function startServer() {
 
       let user: any = null;
       if (db) {
-        const querySnapshot = await db.collection("admin_users").where("email", "==", normalizedEmail).get();
-        if (!querySnapshot.empty) {
-          user = querySnapshot.docs[0].data();
+        try {
+          const querySnapshot = await db.collection("admin_users").where("email", "==", normalizedEmail).get();
+          if (!querySnapshot.empty) {
+            user = querySnapshot.docs[0].data();
+          }
+        } catch (dbErr: any) {
+          console.error("Erro resiliente: falha ao buscar usuário no Firestore, usando fallback de memória:", dbErr.message);
+          user = adminUsersMemoryFallback.find(u => u.email.trim().toLowerCase() === normalizedEmail);
         }
       } else {
         user = adminUsersMemoryFallback.find(u => u.email.trim().toLowerCase() === normalizedEmail);
@@ -992,7 +1006,10 @@ async function startServer() {
   });
 
   // Middleware do Vite (Desenvolvimento vs Produção)
-  if (process.env.NODE_ENV !== "production") {
+  // Verificação dupla: se a pasta dist existir, força o modo produção para evitar carregar o Vite Dev Server em servidores externos como Render
+  const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.join(process.cwd(), "dist"));
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

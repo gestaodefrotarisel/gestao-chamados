@@ -3,12 +3,12 @@ import { motion } from 'motion/react';
 import { ShieldCheck, Lock, User, AlertCircle, Eye, EyeOff, Building2 } from 'lucide-react';
 
 interface AdminLoginProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess: (name: string, email: string) => void;
   onCancel: () => void;
 }
 
 export default function AdminLogin({ onLoginSuccess, onCancel }: AdminLoginProps) {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -17,17 +17,36 @@ export default function AdminLogin({ onLoginSuccess, onCancel }: AdminLoginProps
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    
+    const emailLower = email.trim().toLowerCase();
+    
+    // Validação obrigatória do domínio do e-mail @risel.com.br
+    if (!emailLower.endsWith('@risel.com.br')) {
+      setErrorMsg('O login de administrador deve conter obrigatoriamente um e-mail do domínio @risel.com.br');
+      return;
+    }
+    
     setIsLoading(true);
 
-    // Simulate small delays for an extremely professional system look and feel
-    setTimeout(() => {
-      if (username === 'admin' && password === 'admin') {
-        onLoginSuccess();
+    fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailLower, password })
+    })
+    .then(async (res) => {
+      const data = await res.json();
+      if (res.ok && data.success) {
+        onLoginSuccess(data.user.name, data.user.email);
       } else {
-        setErrorMsg('Credenciais inválidas. Use admin / admin para testar.');
-        setIsLoading(false);
+        setErrorMsg(data.error || 'E-mail ou senha incorretos.');
       }
-    }, 800);
+    })
+    .catch((err) => {
+      setErrorMsg('Erro ao conectar com o servidor: ' + err.message);
+    })
+    .finally(() => {
+      setIsLoading(false);
+    });
   };
 
   return (
@@ -56,26 +75,26 @@ export default function AdminLogin({ onLoginSuccess, onCancel }: AdminLoginProps
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           {errorMsg && (
-            <div className="bg-rose-50 border border-rose-100 text-rose-800 rounded-xl p-4 flex items-center gap-3 text-xs">
+            <div className="bg-rose-50 border border-rose-100 text-rose-800 rounded-xl p-4 flex items-center gap-3 text-xs font-semibold">
               <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
               <span>{errorMsg}</span>
             </div>
           )}
 
           <div className="space-y-4">
-            {/* Usuário */}
+            {/* Usuário (E-mail) */}
             <div>
-              <label htmlFor="username" className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Usuário *</label>
+              <label htmlFor="email" className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">E-mail @risel.com.br *</label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
-                  id="username"
-                  type="text"
+                  id="email"
+                  type="email"
                   required
                   disabled={isLoading}
-                  placeholder="admin"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="exemplo@risel.com.br"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-risel-primary/10 focus:border-risel-primary text-slate-800 transition bg-white"
                 />
               </div>

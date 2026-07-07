@@ -102,6 +102,7 @@ export default function AdminHistory({
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   
   // States for filters
+  const [showInlineFilters, setShowInlineFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<string>('Todas');
   const [statusFilter, setStatusFilter] = useState<string>('Todos');
@@ -260,97 +261,108 @@ export default function AdminHistory({
 
   return (
     <div className="space-y-6" id="history-tab-container">
-      <div>
-        <h2 className="text-xl md:text-2xl font-bold font-display text-slate-900">Histórico de Chamados de Facilities</h2>
-        <p className="text-xs text-slate-500">Consulte, filtre e gerencie ordens de serviço ativas e o histórico de intervenções prediais.</p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-xl md:text-2xl font-bold font-display text-slate-900">Histórico de Chamados de Facilities</h2>
+          <p className="text-xs text-slate-500">Consulte, filtre e gerencie ordens de serviço ativas e o histórico de intervenções prediais.</p>
+        </div>
+        <button
+          onClick={() => setShowInlineFilters(!showInlineFilters)}
+          className={`flex items-center gap-2 text-xs border px-3 py-1.5 rounded-lg transition ${showInlineFilters ? 'bg-risel-blue text-white border-risel-blue' : 'bg-white border-slate-200 text-slate-700 hover:border-risel-primary'}`}
+        >
+          <Filter className="w-3.5 h-3.5" />
+          {showInlineFilters ? 'Ocultar Filtros' : 'Filtros'}
+        </button>
       </div>
 
-      {/* Painel de Filtros Avançados */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="w-4 h-4 text-risel-blue" />
-            <h3 className="text-sm font-bold text-slate-800 font-display">Filtros Avançados</h3>
+      {/* Painel de Filtros Avançados - Retrátil */}
+      {showInlineFilters && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-risel-blue" />
+              <h3 className="text-sm font-bold text-slate-800 font-display">Filtros Avançados</h3>
+            </div>
+            <button 
+              onClick={() => {
+                setSearchQuery('');
+                setPriorityFilter('Todas');
+                setStatusFilter('Todos');
+                setDateFilter('Todos');
+              }}
+              className="text-xs font-semibold text-slate-400 hover:text-risel-blue transition"
+            >
+              Limpar Filtros
+            </button>
           </div>
-          <button 
-            onClick={() => {
-              setSearchQuery('');
-              setPriorityFilter('Todas');
-              setStatusFilter('Todos');
-              setDateFilter('Todos');
-            }}
-            className="text-xs font-semibold text-slate-400 hover:text-risel-blue transition"
-          >
-            Limpar Filtros
-          </button>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Busca por texto */}
-          <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">Buscar por palavra-chave</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="ID, solicitante, local, etc..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-risel-blue/10 focus:border-risel-blue"
-              />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Busca por texto */}
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Buscar por palavra-chave</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="ID, solicitante, local, etc..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-risel-blue/10 focus:border-risel-blue"
+                />
+              </div>
+            </div>
+
+            {/* Categoria de Prioridade */}
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Urgência / Prioridade</label>
+              <select
+                value={priorityFilter}
+                onChange={(e) => setPriorityFilter(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+              >
+                <option value="Todas">Todas as prioridades</option>
+                <option value="Crítica">Crítica</option>
+                <option value="Alta">Alta</option>
+                <option value="Média">Média</option>
+                <option value="Baixa">Baixa</option>
+              </select>
+            </div>
+
+            {/* Status */}
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Status da OS</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+              >
+                <option value="Todos">Todos os status</option>
+                <option value="Novo">Novo</option>
+                <option value="Em Análise">Em Análise</option>
+                <option value="Em Atendimento">Em Atendimento</option>
+                <option value="Aguardando Peça">Aguardando Peça</option>
+                <option value="Concluído">Concluído</option>
+                <option value="Cancelado">Cancelado</option>
+              </select>
+            </div>
+
+            {/* Período */}
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Período de Abertura</label>
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+              >
+                <option value="Todos">Todo o histórico</option>
+                <option value="hoje">Hoje (últimas 24h)</option>
+                <option value="7dias">Últimos 7 dias</option>
+                <option value="30dias">Últimos 30 dias</option>
+              </select>
             </div>
           </div>
-
-          {/* Categoria de Prioridade */}
-          <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">Urgência / Prioridade</label>
-            <select
-              value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-100 bg-white"
-            >
-              <option value="Todas">Todas as prioridades</option>
-              <option value="Crítica">Crítica</option>
-              <option value="Alta">Alta</option>
-              <option value="Média">Média</option>
-              <option value="Baixa">Baixa</option>
-            </select>
-          </div>
-
-          {/* Status */}
-          <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">Status da OS</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-100 bg-white"
-            >
-              <option value="Todos">Todos os status</option>
-              <option value="Novo">Novo</option>
-              <option value="Em Análise">Em Análise</option>
-              <option value="Em Atendimento">Em Atendimento</option>
-              <option value="Aguardando Peça">Aguardando Peça</option>
-              <option value="Concluído">Concluído</option>
-              <option value="Cancelado">Cancelado</option>
-            </select>
-          </div>
-
-          {/* Período */}
-          <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1">Período de Abertura</label>
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-100 bg-white"
-            >
-              <option value="Todos">Todo o histórico</option>
-              <option value="hoje">Hoje (últimas 24h)</option>
-              <option value="7dias">Últimos 7 dias</option>
-              <option value="30dias">Últimos 30 dias</option>
-            </select>
-          </div>
         </div>
-      </div>
+      )}
 
       {/* Lista Funcional (Tabela responsiva) */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
