@@ -77,6 +77,8 @@ export default function App() {
 
   // Sub-navigation for admin: 'dashboard' | 'history' | 'registers'
   const [adminTab, setAdminTab] = useState<'dashboard' | 'history' | 'registers'>('dashboard');
+  // State for active admin ticket editing
+  const [activeAdminTicketId, setActiveAdminTicketId] = useState<string | null>(null);
 
   // Sidebar collapsed state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -554,12 +556,22 @@ export default function App() {
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.15 }}
                 >
-                  {adminTab === 'dashboard' && <AdminDashboard tickets={tickets} />}
+                  {adminTab === 'dashboard' && (
+                    <AdminDashboard 
+                      tickets={tickets} 
+                      onEditTicket={(ticketId) => {
+                        setActiveAdminTicketId(ticketId);
+                        setAdminTab('history');
+                      }}
+                    />
+                  )}
                   {adminTab === 'history' && (
                     <AdminHistory 
                       tickets={tickets} 
                       onUpdateTicket={handleUpdateTicket} 
                       adminUsers={adminUsers}
+                      initialSelectedTicketId={activeAdminTicketId}
+                      onCloseDetail={() => setActiveAdminTicketId(null)}
                     />
                   )}
                   {adminTab === 'registers' && (

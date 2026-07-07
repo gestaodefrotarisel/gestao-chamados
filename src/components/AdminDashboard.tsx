@@ -14,9 +14,10 @@ import { Ticket } from '../types';
 
 interface AdminDashboardProps {
   tickets: Ticket[];
+  onEditTicket?: (ticketId: string) => void;
 }
 
-export default function AdminDashboard({ tickets }: AdminDashboardProps) {
+export default function AdminDashboard({ tickets, onEditTicket }: AdminDashboardProps) {
   const [showCriticalModal, setShowCriticalModal] = useState(false);
   const [showInlineFilters, setShowInlineFilters] = useState(false);
   const [periodFilter, setPeriodFilter] = useState('Todos');
@@ -57,7 +58,15 @@ export default function AdminDashboard({ tickets }: AdminDashboardProps) {
           {criticalTickets.map(t => (
             <div key={t.id} className="p-3 border border-slate-200 rounded-lg flex justify-between items-center text-xs">
               <div><span className="font-bold text-risel-blue">{t.id}</span> - {t.category}</div>
-              <button className="text-risel-primary font-bold">Editar</button>
+              <button 
+                onClick={() => {
+                  setShowCriticalModal(false);
+                  if (onEditTicket) onEditTicket(t.id);
+                }} 
+                className="text-risel-primary font-bold hover:underline cursor-pointer"
+              >
+                Editar
+              </button>
             </div>
           ))}
         </div>

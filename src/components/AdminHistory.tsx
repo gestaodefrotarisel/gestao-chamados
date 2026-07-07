@@ -84,9 +84,17 @@ interface AdminHistoryProps {
   tickets: Ticket[];
   onUpdateTicket: (updatedTicket: Ticket) => void;
   adminUsers: AdminUser[];
+  initialSelectedTicketId?: string | null;
+  onCloseDetail?: () => void;
 }
 
-export default function AdminHistory({ tickets, onUpdateTicket, adminUsers }: AdminHistoryProps) {
+export default function AdminHistory({ 
+  tickets, 
+  onUpdateTicket, 
+  adminUsers,
+  initialSelectedTicketId,
+  onCloseDetail
+}: AdminHistoryProps) {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   
   // States for filters
@@ -105,6 +113,21 @@ export default function AdminHistory({ tickets, onUpdateTicket, adminUsers }: Ad
   const [sortConfig, setSortConfig] = useState<{ key: keyof Ticket, direction: 'asc' | 'desc' } | null>(null);
 
   const selectedTicket = tickets.find(t => t.id === selectedTicketId);
+
+  // Sync initialSelectedTicketId
+  React.useEffect(() => {
+    if (initialSelectedTicketId) {
+      const ticket = tickets.find(t => t.id === initialSelectedTicketId);
+      if (ticket) {
+        handleOpenDetail(ticket);
+      }
+    }
+  }, [initialSelectedTicketId, tickets]);
+
+  const handleClose = () => {
+    setSelectedTicketId(null);
+    if (onCloseDetail) onCloseDetail();
+  };
 
   const requestSort = (key: keyof Ticket) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -189,7 +212,7 @@ export default function AdminHistory({ tickets, onUpdateTicket, adminUsers }: Ad
     };
 
     onUpdateTicket(updated);
-    setSelectedTicketId(null); // Fecha o painel
+    handleClose(); // Fecha o painel
   };
 
   const formatDate = (dateStr: string) => {
@@ -458,7 +481,7 @@ export default function AdminHistory({ tickets, onUpdateTicket, adminUsers }: Ad
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.4 }}
               exit={{ opacity: 0 }}
-              onClick={() => setSelectedTicketId(null)}
+              onClick={handleClose}
               className="fixed inset-0 bg-black z-40"
             />
 
@@ -477,7 +500,7 @@ export default function AdminHistory({ tickets, onUpdateTicket, adminUsers }: Ad
                   <h3 className="text-lg font-bold font-display">{selectedTicket.id}</h3>
                 </div>
                 <button
-                  onClick={() => setSelectedTicketId(null)}
+                  onClick={handleClose}
                   className="p-1.5 hover:bg-white/10 rounded-lg transition text-white"
                 >
                   <X className="w-5 h-5" />
@@ -635,7 +658,7 @@ export default function AdminHistory({ tickets, onUpdateTicket, adminUsers }: Ad
               <div className="p-4 border-t border-slate-100 bg-slate-50 shrink-0 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setSelectedTicketId(null)}
+                  onClick={handleClose}
                   className="flex-1 py-3 text-xs font-semibold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 rounded-xl transition text-center"
                 >
                   Cancelar
