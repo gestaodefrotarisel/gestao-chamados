@@ -100,7 +100,7 @@ export default function App() {
   // Controle de carga inicial para evitar loops de sincronização com o banco
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
 
-  // --- SYNCHRONIZE DATA TO LOCAL STORAGE & SUPABASE ---
+  // --- SYNCHRONIZE DATA TO LOCAL STORAGE & FIREBASE ---
   useEffect(() => {
     localStorage.setItem('risel_facilities_tickets', JSON.stringify(tickets));
   }, [tickets]);
@@ -112,7 +112,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: maintenanceItems })
-      }).catch(err => console.error('Erro ao sincronizar itens com o Supabase:', err));
+      }).catch(err => console.error('Erro ao sincronizar itens com o Firebase:', err));
     }
   }, [maintenanceItems, isInitialLoadDone]);
 
@@ -123,7 +123,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bases: operationalBases })
-      }).catch(err => console.error('Erro ao sincronizar bases com o Supabase:', err));
+      }).catch(err => console.error('Erro ao sincronizar bases com o Firebase:', err));
     }
   }, [operationalBases, isInitialLoadDone]);
 
@@ -134,7 +134,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ configs: urgencyConfigs })
-      }).catch(err => console.error('Erro ao sincronizar urgências com o Supabase:', err));
+      }).catch(err => console.error('Erro ao sincronizar urgências com o Firebase:', err));
     }
   }, [urgencyConfigs, isInitialLoadDone]);
 
@@ -145,7 +145,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ users: adminUsers })
-      }).catch(err => console.error('Erro ao sincronizar administradores com o Supabase:', err));
+      }).catch(err => console.error('Erro ao sincronizar administradores com o Firebase:', err));
     }
   }, [adminUsers, isInitialLoadDone]);
 
@@ -162,7 +162,7 @@ export default function App() {
     return () => window.removeEventListener('track-ticket', handleTrackEvent);
   }, []);
 
-  // --- CARREGAMENTO INICIAL E SINCRONIZAÇÃO COM O SUPABASE / API ---
+  // --- CARREGAMENTO INICIAL E SINCRONIZAÇÃO COM O FIREBASE / API ---
   useEffect(() => {
     const loadAllData = async () => {
       try {
@@ -170,17 +170,17 @@ export default function App() {
         const ticketsRes = await fetch('/api/tickets');
         if (ticketsRes.ok) {
           const ticketsData = await ticketsRes.json();
-          // Verifica se o Supabase está configurado para sabermos se devemos limpar chamados fictícios
+          // Verifica se o Firebase está configurado para sabermos se devemos limpar chamados fictícios
           const statusRes = await fetch('/api/db-status');
           const statusData = await statusRes.json();
           const isDbActive = statusData.configured;
 
           if (isDbActive) {
-            // Se o Supabase está ativo, usamos os dados reais do banco. 
+            // Se o Firebase está ativo, usamos os dados reais do banco. 
             // Se o banco estiver vazio, iniciamos com vazio [] para começar do zero com dados reais!
             setTickets(ticketsData || []);
           } else {
-            // Se o Supabase não está ativo, usamos o localStorage ou fallback comum
+            // Se o Firebase não está ativo, usamos o localStorage ou fallback comum
             if (Array.isArray(ticketsData) && ticketsData.length > 0) {
               setTickets(ticketsData);
             }
@@ -252,7 +252,7 @@ export default function App() {
         }
 
       } catch (err) {
-        console.error("Erro no carregamento de dados do Supabase:", err);
+        console.error("Erro no carregamento de dados do Firebase:", err);
       } finally {
         setIsInitialLoadDone(true);
       }

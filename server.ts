@@ -29,13 +29,25 @@ try {
   }
 
   if (projectId) {
-    const app = admin.initializeApp({
+    const configOptions: admin.AppOptions = {
       projectId: projectId,
-    });
+    };
+
+    const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+    if (serviceAccountKey) {
+      try {
+        const credentials = JSON.parse(serviceAccountKey);
+        configOptions.credential = (admin as any).credential.cert(credentials);
+      } catch (err) {
+        console.error("Erro ao analisar a variável FIREBASE_SERVICE_ACCOUNT_KEY:", err);
+      }
+    }
+
+    const app = admin.initializeApp(configOptions);
     
     db = getFirestore(app, databaseId || undefined);
     isFirebaseConfigured = true;
-    console.log(`Firebase Firestore inicializado com sucesso! Project ID: ${projectId}, ID do Banco: ${databaseId || "(default)"}`);
+    console.log(`Firebase Firestore inicializado com sucesso! Project ID: ${projectId}, ID do Banco: ${databaseId || "(default)"}${serviceAccountKey ? " (Utilizando Service Account)" : ""}`);
   } else {
     console.warn("Nenhuma configuração do Firebase encontrada (arquivo ou variáveis de ambiente). Utilizando armazenamento em memória de fallback.");
   }
