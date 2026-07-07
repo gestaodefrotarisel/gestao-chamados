@@ -335,6 +335,33 @@ export default function App() {
     .catch(err => console.error('Erro ao atualizar chamado no backend:', err));
   };
 
+  const handleDeleteTicket = (ticketId: string) => {
+    // 1. Atualiza o estado localmente imediatamente para dar feedback rápido
+    setTickets(prev => {
+      const updated = prev.filter(t => t.id !== ticketId);
+      localStorage.setItem('risel_facilities_tickets', JSON.stringify(updated));
+      return updated;
+    });
+
+    // 2. Envia a requisição de exclusão para o backend
+    fetch(`/api/tickets/${ticketId}`, {
+      method: 'DELETE'
+    })
+    .catch(err => console.error('Erro ao excluir chamado no backend:', err));
+  };
+
+  const handleResetTickets = () => {
+    // 1. Limpa o local storage e o estado local imediatamente
+    localStorage.removeItem('risel_facilities_tickets');
+    setTickets([]);
+
+    // 2. Envia a requisição de reset geral para o backend
+    fetch('/api/tickets/reset', {
+      method: 'POST'
+    })
+    .catch(err => console.error('Erro ao resetar chamados no backend:', err));
+  };
+
   const handleRateTicket = (id: string, rating: number, feedback: string) => {
     const originalTicket = tickets.find(t => t.id === id);
     if (!originalTicket) return;
@@ -569,6 +596,7 @@ export default function App() {
                     <AdminHistory 
                       tickets={tickets} 
                       onUpdateTicket={handleUpdateTicket} 
+                      onDeleteTicket={handleDeleteTicket}
                       adminUsers={adminUsers}
                       initialSelectedTicketId={activeAdminTicketId}
                       onCloseDetail={() => setActiveAdminTicketId(null)}
@@ -584,6 +612,7 @@ export default function App() {
                       setUrgencyConfigs={setUrgencyConfigs}
                       adminUsers={adminUsers}
                       setAdminUsers={setAdminUsers}
+                      onResetTickets={handleResetTickets}
                     />
                   )}
                 </motion.div>

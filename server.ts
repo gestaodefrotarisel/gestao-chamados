@@ -37,6 +37,10 @@ try {
     if (serviceAccountKey) {
       try {
         const credentials = JSON.parse(serviceAccountKey);
+        // Garante que eventuais quebras de linha escapadas como '\\n' no Render sejam convertidas para quebras reais '\n'
+        if (credentials.private_key) {
+          credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
+        }
         configOptions.credential = (admin as any).credential.cert(credentials);
       } catch (err) {
         console.error("Erro ao analisar a variável FIREBASE_SERVICE_ACCOUNT_KEY:", err);
@@ -356,6 +360,53 @@ async function startServer() {
     } catch (err: any) {
       console.error("Erro ao atualizar chamado:", err);
       return res.json({ success: true, ticket: req.body.ticket });
+    }
+  });
+
+  // Excluir chamado individualmente
+  app.delete("/api/tickets/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      ticketsMemoryFallback = ticketsMemoryFallback.filter(t => t.id !== id);
+
+      if (db) {
+        try {
+          await db.collection("tickets").doc(id).delete();
+          console.log(`Chamado ${id} excluído com sucesso do Firestore.`);
+        } catch (error: any) {
+          console.error(`Erro ao excluir chamado ${id} do Firestore:`, error);
+          return res.status(500).json({ error: "Erro ao excluir no banco de dados." });
+        }
+      }
+      return res.json({ success: true, message: "Chamado excluído com sucesso!" });
+    } catch (err: any) {
+      console.error("Erro ao excluir chamado:", err);
+      return res.status(500).json({ error: "Erro no servidor ao excluir chamado." });
+    }
+  });
+
+  // Zerar todos os chamados (Banco de Dados de Chamados)
+  app.post("/api/tickets/reset", async (req, res) => {
+    try {
+      ticketsMemoryFallback = [];
+
+      if (db) {
+        try {
+          const colRef = db.collection("tickets");
+          const snapshot = await colRef.get();
+          const batch = db.batch();
+          snapshot.docs.forEach((doc: any) => batch.delete(doc.ref));
+          await batch.commit();
+          console.log("Banco de dados de chamados (tickets) zerado com sucesso!");
+        } catch (error: any) {
+          console.error("Erro ao zerar coleção tickets no Firestore:", error);
+          return res.status(500).json({ error: "Erro ao zerar banco de dados na nuvem." });
+        }
+      }
+      return res.json({ success: true, message: "Todos os chamados foram removidos com sucesso!" });
+    } catch (err: any) {
+      console.error("Erro ao processar reset de chamados:", err);
+      return res.status(500).json({ error: "Erro no servidor ao zerar chamados." });
     }
   });
 

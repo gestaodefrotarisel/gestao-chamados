@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Filter, SlidersHorizontal, Calendar, ArrowUpDown, 
   Search, Check, X, Eye, Edit2, CheckCircle2, 
-  Clock, AlertTriangle, User, DollarSign, Wrench, FileText
+  Clock, AlertTriangle, User, DollarSign, Wrench, FileText,
+  Trash2
 } from 'lucide-react';
 import { Ticket, PriorityType, StatusType, AdminUser } from '../types';
 import { TECHNICIANS } from '../data';
@@ -83,6 +84,7 @@ export function getSlaRemainingText(slaTargetDateStr: string, status: StatusType
 interface AdminHistoryProps {
   tickets: Ticket[];
   onUpdateTicket: (updatedTicket: Ticket) => void;
+  onDeleteTicket: (ticketId: string) => void;
   adminUsers: AdminUser[];
   initialSelectedTicketId?: string | null;
   onCloseDetail?: () => void;
@@ -91,11 +93,13 @@ interface AdminHistoryProps {
 export default function AdminHistory({ 
   tickets, 
   onUpdateTicket, 
+  onDeleteTicket,
   adminUsers,
   initialSelectedTicketId,
   onCloseDetail
 }: AdminHistoryProps) {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   
   // States for filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -126,6 +130,7 @@ export default function AdminHistory({
 
   const handleClose = () => {
     setSelectedTicketId(null);
+    setShowConfirmDelete(false);
     if (onCloseDetail) onCloseDetail();
   };
 
@@ -650,6 +655,48 @@ export default function AdminHistory({
                     onChange={(e) => setEditNotes(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   />
+                </div>
+
+                {/* Exclusão de Chamado (Ação de Segurança) */}
+                <div className="pt-4 border-t border-slate-100 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-rose-500">Ações de Segurança / Moderação</h4>
+                  
+                  {!showConfirmDelete ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmDelete(true)}
+                      className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 border border-rose-100 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4 text-rose-600" />
+                      <span>Excluir Chamado Permanentemente</span>
+                    </button>
+                  ) : (
+                    <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-4 space-y-3">
+                      <p className="text-xs font-semibold text-rose-800 leading-relaxed">
+                        Tem certeza que deseja excluir este chamado permanentemente? Essa ação removerá o chamado da nuvem e do sistema local de forma definitiva e não poderá ser desfeita.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onDeleteTicket(selectedTicket.id);
+                            setShowConfirmDelete(false);
+                            handleClose();
+                          }}
+                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                        >
+                          Sim, Excluir
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmDelete(false)}
+                          className="px-3.5 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-50 transition cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
               </form>

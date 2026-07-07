@@ -3,7 +3,8 @@ import { motion } from 'motion/react';
 import { 
   Building2, Layers, Clock, Plus, Trash2, Edit2, Check, X, ToggleLeft, ToggleRight, 
   Wind, Zap, Droplet, Hammer, ArrowUpDown, ShieldAlert, Trash, AlertTriangle, Play, Users,
-  Key, Wifi, Paintbrush, Wrench, Flame, Plug, HardHat, Laptop, Phone, Sun, Car, Leaf, Search
+  Key, Wifi, Paintbrush, Wrench, Flame, Plug, HardHat, Laptop, Phone, Sun, Car, Leaf, Search,
+  Database, RefreshCw, Server
 } from 'lucide-react';
 import { MaintenanceItem, OperationalBase, UrgencyConfig, PriorityType, AdminUser } from '../types';
 
@@ -49,9 +50,10 @@ interface AdminRegistersProps {
   setUrgencyConfigs: React.Dispatch<React.SetStateAction<UrgencyConfig[]>>;
   adminUsers: AdminUser[];
   setAdminUsers: React.Dispatch<React.SetStateAction<AdminUser[]>>;
+  onResetTickets: () => void;
 }
 
-type TabType = 'bases' | 'items' | 'urgency' | 'admins';
+type TabType = 'bases' | 'items' | 'urgency' | 'admins' | 'sistema';
 
 export default function AdminRegisters({
   maintenanceItems,
@@ -61,9 +63,21 @@ export default function AdminRegisters({
   urgencyConfigs,
   setUrgencyConfigs,
   adminUsers,
-  setAdminUsers
+  setAdminUsers,
+  onResetTickets
 }: AdminRegistersProps) {
   const [activeTab, setActiveTab] = useState<TabType>('items');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [dbInfo, setDbInfo] = useState<{ configured: boolean; provider: string }>({ configured: false, provider: 'Verificando...' });
+
+  React.useEffect(() => {
+    fetch('/api/db-status')
+      .then(res => res.json())
+      .then(data => setDbInfo(data))
+      .catch(() => setDbInfo({ configured: false, provider: 'Erro ao conectar' }));
+  }, [activeTab]);
 
   // State for operational base forms
   const [newBaseName, setNewBaseName] = useState('');
@@ -461,6 +475,17 @@ export default function AdminRegisters({
           >
             <Users className="w-3.5 h-3.5" />
             <span>Admins</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('sistema')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer ${
+              activeTab === 'sistema' 
+                ? 'bg-white text-risel-blue shadow-sm' 
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Sistema</span>
           </button>
         </div>
       </div>
@@ -1365,6 +1390,112 @@ export default function AdminRegisters({
                 </div>
               </div>
 
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: SISTEMA E BANCO DE DADOS */}
+        {activeTab === 'sistema' && (
+          <div className="space-y-6">
+            <div className="max-w-3xl bg-slate-50 rounded-2xl border border-slate-200/60 p-6 space-y-6">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                  <Server className="w-4 h-4 text-risel-blue" />
+                  <span>Status e Integração de Dados</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">Monitore a conexão com a nuvem e limpe dados para início de produção.</p>
+              </div>
+
+              {/* Status de Conexão */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center justify-between">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Provedor Ativo</span>
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-emerald-500" />
+                    <span>{dbInfo.provider}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${dbInfo.configured ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+                  <span className="text-xs font-semibold text-slate-600">
+                    {dbInfo.configured ? 'Firebase Conectado' : 'Modo Offline / LocalStorage'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Reset de Chamados */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="bg-rose-50 text-rose-600 p-2 rounded-lg shrink-0">
+                    <RefreshCw className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Limpar Dados de Chamados</h4>
+                    <p className="text-xs text-slate-500 mt-1">Remova permanentemente TODOS os chamados registrados no banco de dados e no cache local do navegador para iniciar o sistema em produção limpo.</p>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  {!showResetConfirm ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowResetConfirm(true);
+                        setResetSuccess(false);
+                      }}
+                      disabled={isResetting}
+                      className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 shadow-sm disabled:opacity-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Zerar Banco de Chamados</span>
+                    </button>
+                  ) : (
+                    <div className="bg-rose-50 border border-rose-100 rounded-xl p-4 space-y-3">
+                      <p className="text-xs font-semibold text-rose-800 leading-relaxed">
+                        ⚠️ Atenção: Esta ação irá deletar permanentemente todos os chamados da Risel no Firestore e no cache local. Isso removerá as OSs fictícias antigas e iniciará o painel limpo. Deseja prosseguir?
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsResetting(true);
+                            onResetTickets();
+                            setTimeout(() => {
+                              setIsResetting(false);
+                              setShowResetConfirm(false);
+                              setResetSuccess(true);
+                            }, 1500);
+                          }}
+                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                        >
+                          {isResetting ? 'Limpando...' : 'Sim, Limpar Tudo'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowResetConfirm(false)}
+                          className="px-3.5 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-50 transition cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {resetSuccess && (
+                    <div className="mt-3 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                      ✓ Banco de chamados zerado com sucesso! Agora você pode começar a registrar chamados reais de produção.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Informações Úteis de Produção */}
+              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-5 space-y-2">
+                <h4 className="text-xs font-bold text-risel-blue uppercase tracking-wide">Dica de Deploy no Render</h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Para garantir que o seu servidor no Render se conecte perfeitamente ao seu Firebase Firestore na nuvem, lembre-se de configurar a variável de ambiente <strong className="font-mono bg-blue-100 px-1 rounded">FIREBASE_SERVICE_ACCOUNT_KEY</strong> com o conteúdo JSON da sua chave privada (gerada no console do Firebase &gt; Configurações do Projeto &gt; Contas de Serviço). Caso contrário, o servidor utilizará o armazenamento local de fallback de maneira segura.
+                </p>
+              </div>
             </div>
           </div>
         )}
