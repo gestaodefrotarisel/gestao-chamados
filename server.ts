@@ -595,9 +595,9 @@ async function startServer() {
           .map(u => u.email.trim());
       }
 
-      const ccList = [smtpUser];
+      const ccList: string[] = [];
       activeAdminEmails.forEach(email => {
-        if (!ccList.includes(email)) {
+        if (email.trim().toLowerCase() !== smtpUser.trim().toLowerCase() && !ccList.includes(email)) {
           ccList.push(email);
         }
       });
