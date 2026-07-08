@@ -33,17 +33,24 @@ try {
       projectId: projectId,
     };
 
-    const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+    const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_FIRESTORE;
     if (serviceAccountKey) {
       try {
-        const credentials = JSON.parse(serviceAccountKey.trim());
+        let cleanKey = serviceAccountKey.trim();
+        // Caso a chave tenha sido salva com aspas externas extras, remove-las
+        if (cleanKey.startsWith('"') && cleanKey.endsWith('"') && cleanKey.length > 2) {
+          cleanKey = cleanKey.slice(1, -1);
+        }
+        
+        const credentials = JSON.parse(cleanKey);
         // Garante que eventuais quebras de linha escapadas como '\\n' no Render sejam convertidas para quebras reais '\n'
         if (credentials.private_key) {
           credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
         }
         configOptions.credential = (admin as any).credential.cert(credentials);
-      } catch (err) {
-        console.error("Erro ao analisar a variável FIREBASE_SERVICE_ACCOUNT_KEY:", err);
+        console.log("Service Account do Firebase carregada e validada com sucesso!");
+      } catch (err: any) {
+        console.error("Erro ao analisar a variável de Service Account do Firebase:", err.message);
       }
     }
 
@@ -70,6 +77,45 @@ let maintenanceItemsMemoryFallback: any[] = [];
 let operationalBasesMemoryFallback: any[] = [];
 let urgencyConfigsMemoryFallback: any[] = [];
 let adminUsersMemoryFallback: any[] = [];
+
+// Função utilitária resiliente para envio de e-mail com fallback automático de portas (465 SSL para 587 TLS)
+async function sendMailWithFallback(smtpUser: string, smtpPass: string, mailOptions: nodemailer.SendMailOptions) {
+  const createTransporter = (port: number, secure: boolean) => {
+    return nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: port,
+      secure: secure,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      },
+      tls: {
+        rejectUnauthorized: false
+      },
+      connectionTimeout: 8000, // 8 segundos de timeout para cada tentativa
+    });
+  };
+
+  try {
+    console.log(`Tentando enviar e-mail via SMTP Gmail na porta 465 (SSL direta) com remetente ${smtpUser}...`);
+    const transporter465 = createTransporter(465, true);
+    const info = await transporter465.sendMail(mailOptions);
+    console.log("E-mail enviado com sucesso via porta 465!");
+    return info;
+  } catch (err465: any) {
+    console.warn("Falha no envio do e-mail pela porta 465 (SSL direta). Erro:", err465.message || err465);
+    console.log("Tentando canal alternativo na porta 587 (STARTTLS/TLS)...");
+    try {
+      const transporter587 = createTransporter(587, false);
+      const info = await transporter587.sendMail(mailOptions);
+      console.log("E-mail enviado com sucesso via porta 587!");
+      return info;
+    } catch (err587: any) {
+      console.error("Falha também no envio pela porta 587 (STARTTLS). Erro:", err587.message || err587);
+      throw new Error(`Ambas as portas de envio de e-mail (465 e 587) falharam.\nErro Porta 465: ${err465.message}\nErro Porta 587: ${err587.message}`);
+    }
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -456,19 +502,6 @@ async function startServer() {
       const smtpUser = process.env.SMTP_USER || "facilitiesrisel@gmail.com";
       const smtpPass = process.env.SMTP_PASS || "@Cap150957";
 
-      const transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true, // TLS direto na porta 465
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-        tls: {
-          rejectUnauthorized: false // Ignora possíveis erros de SSL/TLS self-signed no ambiente Docker
-        }
-      });
-
       // Formatar data no padrão brasileiro dd/mm/aaaa hh:mm
       const formatDateBr = (dateStr: string) => {
         if (!dateStr) return "-";
@@ -597,13 +630,15 @@ async function startServer() {
 
       const ccList: string[] = [];
       activeAdminEmails.forEach(email => {
-        if (email.trim().toLowerCase() !== smtpUser.trim().toLowerCase() && !ccList.includes(email)) {
+        const normalized = email.trim().toLowerCase();
+        const normalizedSmtp = smtpUser.trim().toLowerCase();
+        if (normalized !== normalizedSmtp && normalized !== "facilitiesrisel@gmail.com" && !ccList.includes(email)) {
           ccList.push(email);
         }
       });
 
       // Garante que o gestor geral deny.goncalves@risel.com.br esteja sempre em cópia
-      if (!ccList.includes("deny.goncalves@risel.com.br")) {
+      if (!ccList.includes("deny.goncalves@risel.com.br") && smtpUser.trim().toLowerCase() !== "deny.goncalves@risel.com.br") {
         ccList.push("deny.goncalves@risel.com.br");
       }
 
@@ -641,7 +676,7 @@ async function startServer() {
         attachments: attachments,
       };
 
-      await transporter.sendMail(mailOptions);
+      await sendMailWithFallback(smtpUser, smtpPass, mailOptions);
       res.json({ success: true, message: "E-mail de notificação enviado com sucesso!" });
     } catch (error: any) {
       console.error("Erro ao enviar e-mail via SMTP Gmail:", error);
@@ -660,19 +695,6 @@ async function startServer() {
       const smtpUser = process.env.SMTP_USER || "facilitiesrisel@gmail.com";
       const smtpPass = process.env.SMTP_PASS || "@Cap150957";
 
-      const transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-        tls: {
-          rejectUnauthorized: false
-        }
-      });
-
       const mailOptions = {
         from: `"Teste Risel" <${smtpUser}>`,
         to: email,
@@ -684,13 +706,13 @@ async function startServer() {
             <div style="margin-top: 20px; padding: 12px; background-color: #f1f5f9; border-radius: 8px; font-size: 12px; color: #475569;">
               <strong>Configuração utilizada:</strong><br>
               • Usuário SMTP: ${smtpUser}<br>
-              • Porta: 465 (SSL)
+              • Porta: Fallback Automático 465 (SSL) / 587 (TLS)
             </div>
           </div>
         `
       };
 
-      await transporter.sendMail(mailOptions);
+      await sendMailWithFallback(smtpUser, smtpPass, mailOptions);
       return res.json({ success: true, message: "E-mail enviado com sucesso!" });
     } catch (error: any) {
       console.error("Erro no teste de SMTP:", error);
@@ -844,19 +866,6 @@ async function startServer() {
       const smtpUser = process.env.SMTP_USER || "facilitiesrisel@gmail.com";
       const smtpPass = process.env.SMTP_PASS || "@Cap150957";
 
-      const transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-        tls: {
-          rejectUnauthorized: false
-        }
-      });
-
       const origin = req.headers.origin || "http://localhost:3000";
       const activationLink = `${origin}/?inviteToken=${inviteToken}`;
 
@@ -896,7 +905,7 @@ async function startServer() {
         `
       };
 
-      await transporter.sendMail(mailOptions);
+      await sendMailWithFallback(smtpUser, smtpPass, mailOptions);
       return res.json({ success: true, message: "Convite enviado com sucesso!", user: newAdmin });
     } catch (err: any) {
       console.error("Erro ao enviar convite administrativo:", err);
